@@ -81,9 +81,12 @@ async fn dogs(data: web::Data<AppState>) -> HttpResponse {
 }
 
 async fn form(data: web::Data<AppState>) -> HttpResponse {
-    let selected_dog_ref = &data.dog_map[&data.selected_id];
     let mut context = Context::new();
-    context.insert("dog", selected_dog_ref);
+    let id = &data.selected_id;
+    if !id.is_empty() {
+      let dog_ref = &data.dog_map[&data.selected_id];
+      context.insert("dog", dog_ref);
+    }
 
     let html = data.templates.render("form.tera", &context);
     HttpResponse::Ok()
@@ -102,9 +105,9 @@ async fn hello(data: web::Data<AppState>) -> HttpResponse {
 }
 
 async fn rows(data: web::Data<AppState>) -> HttpResponse {
+    let mut context = Context::new();
     let mut dogs = data.dog_map.values().collect::<Vec<&Dog>>();
     dogs.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut context = Context::new();
     context.insert("dogs", &dogs);
 
     let html = data.templates.render("dog-rows.tera", &context);
