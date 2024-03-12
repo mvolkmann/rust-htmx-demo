@@ -1,5 +1,5 @@
 use actix_files::Files;
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tera::{Context, Tera}; // templating engine based on Jinja
@@ -48,12 +48,10 @@ async fn main() -> Result<(), std::io::Error> {
  
         App::new()
             .app_data(web::Data::new(state))
-            .service(healthcheck)
-            // .service(hello)
             .route("/hello", web::get().to(hello))
-            // .service(form)
+            .route("/dogs", web::get().to(dogs))
             .route("/form", web::get().to(form))
-            .service(rows)
+            .route("/rows", web::get().to(rows))
             .service(Files::new("/", "./public").index_file("index.html"))
     })
     .workers(1) 
@@ -66,24 +64,22 @@ async fn main() -> Result<(), std::io::Error> {
     server.await
 }
 
-#[get("/health")]
-async fn healthcheck() -> impl Responder {
-    let message = "Everything is working fine".to_string();
-    HttpResponse::Ok().json(message)
-}
+async fn dogs(data: web::Data<AppState>) -> HttpResponse {
+    println!("data.selected_id = {:?}", data.selected_id);
 
-async fn hello(data: web::Data<AppState>) -> HttpResponse {
-    println!("in hello");
     let mut context = Context::new();
     context.insert("name", "Tera");
-    let html = data.templates.render("hello.tera", &context);
-    println!("html = {:?}", html);
+
+    let mut dogs = data.dog_map.values().collect::<Vec<&Dog>>();
+    dogs.sort_by(|a, b| a.name.cmp(&b.name));
+    context.insert("dogs", &dogs);
+
+    let html = data.templates.render("dogs.tera", &context);
     HttpResponse::Ok()
         .content_type("text/html")
         .body(html.unwrap())
 }
 
-// #[get("/form")]
 async fn form(data: web::Data<AppState>) -> HttpResponse {
     let selected_dog_ref = &data.dog_map[&data.selected_id];
     let mut context = Context::new();
@@ -95,7 +91,16 @@ async fn form(data: web::Data<AppState>) -> HttpResponse {
         .body(html.unwrap())
 }
 
-#[get("/dog-rows")]
+async fn hello(data: web::Data<AppState>) -> HttpResponse {
+    let mut context = Context::new();
+    context.insert("name", "Tera");
+    let html = data.templates.render("hello.tera", &context);
+    println!("html = {:?}", html);
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(html.unwrap())
+}
+
 async fn rows(data: web::Data<AppState>) -> HttpResponse {
     let mut dogs = data.dog_map.values().collect::<Vec<&Dog>>();
     dogs.sort_by(|a, b| a.name.cmp(&b.name));

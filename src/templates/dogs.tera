@@ -1,32 +1,31 @@
-<tr
-  class="on-hover"
-  id="row-{{dog.id}}"
-  {% if swap %}
-    hx-swap-oob="true"
-  {% endif %}
->
-  <td>{{dog.name}}</td>
-  <td>{{dog.breed}}</td>
-  <td class="buttons">
-    <button
-      class="show-on-hover"
-      hx-confirm="Are you sure?"
-      hx-delete="/dog/{{dog.id}}"
-      hx-target="closest tr"
-      hx-swap="outerHTML"
-      type="button"
-    >
-      ✕
-    </button>
-    <!-- This selects the dog which triggers a selection-change event
-         which causes the form to update. -->
-    <button
-      class="show-on-hover"
-      hx-get="/select/{{dog.id}}"
-      hx-swap="none"
-      type="button"
-    >
-      ✎
-    </button>
-  </td>
-</tr>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>htmx Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  </head>
+  <body>
+    <h1>Dogs</h1>
+    <div hx-trigger="revealed, selection-change from:body" hx-get="/form"></div>
+    <table hx-get="/rows" hx-target="tbody" hx-trigger="revealed">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Breed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dog in dogs %}
+          <tr>
+            <td>{{dog.name}}</td>
+            <td>{{dog.breed}}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </body>
+</html>
+
