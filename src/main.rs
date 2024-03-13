@@ -2,6 +2,7 @@ use actix_files::Files;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tera::{Context, Tera}; // templating engine based on Jinja
 use uuid::Uuid;
 
@@ -12,9 +13,10 @@ struct Dog {
     breed: String,
 }
 
+#[derive(Debug)]
 struct AppState {
-  dog_map: HashMap<String, Dog>,
-  selected_id: String,
+  dog_map: Mutex<HashMap<String, Dog>>,
+  selected_id: Mutex<String>,
   templates: tera::Tera
 }
 
@@ -36,14 +38,15 @@ async fn main() -> Result<(), std::io::Error> {
         println!("creating server");
         let templates = Tera::new("src/templates/**/*.tera").unwrap();
 
-        let mut state = AppState {
-            dog_map: HashMap::new(),
-            selected_id: String::new(),
+        let state = AppState {
+            dog_map: Mutex::new(HashMap::new()),
+            selected_id: Mutex::new(String::new()),
             templates,
         };
 
-        add_dog(&mut state.dog_map, "Comet", "Whippet");
-        add_dog(&mut state.dog_map, "Oscar", "German Shorthaired Pointer");
+        let mut dog_map = &state.dog_map.lock().unwrap();
+        add_dog(&mut dog_map, "Comet", "Whippet");
+        add_dog(&mut dog_map, "Oscar", "German Shorthaired Pointer");
         println!("dog_map = {:?}", state.dog_map);
  
         App::new()
@@ -52,6 +55,7 @@ async fn main() -> Result<(), std::io::Error> {
             .route("/dogs", web::get().to(dogs))
             .route("/form", web::get().to(form))
             .route("/rows", web::get().to(rows))
+            .route("/select/{id}", web::get().to(select))
             .service(Files::new("/", "./public").index_file("index.html"))
     })
     .workers(1) 
@@ -60,7 +64,7 @@ async fn main() -> Result<(), std::io::Error> {
     .run();
 
     // println!("listening at {}", server.local_addr());
-    println!("listening at 3000");
+    println!("listening on 3000");
     server.await
 }
 
@@ -70,7 +74,8 @@ async fn dogs(data: web::Data<AppState>) -> HttpResponse {
     let mut context = Context::new();
     context.insert("name", "Tera");
 
-    let mut dogs = data.dog_map.values().collect::<Vec<&Dog>>();
+    let dog_map = data.dog_map.lock().unwrap();
+    let mut dogs = dog_map.values().collect::<Vec<&Dog>>();
     dogs.sort_by(|a, b| a.name.cmp(&b.name));
     context.insert("dogs", &dogs);
 
@@ -81,11 +86,14 @@ async fn dogs(data: web::Data<AppState>) -> HttpResponse {
 }
 
 async fn form(data: web::Data<AppState>) -> HttpResponse {
-    let mut context = Context::new();
-    let id = &data.selected_id;
+    let id = data.selected_id.lock().unwrap();
+    println!("form: id = {:?}", id);
+    // let mut context = Context::new();
+    let context = Context::new();
     if !id.is_empty() {
-      let dog_ref = &data.dog_map[&data.selected_id];
-      context.insert("dog", dog_ref);
+      println!("form: id is not empty");
+      // let dog_ref = &data.dog_map[&id];
+      // context.insert("dog", dog_ref);
     }
 
     let html = data.templates.render("form.tera", &context);
@@ -106,7 +114,8 @@ async fn hello(data: web::Data<AppState>) -> HttpResponse {
 
 async fn rows(data: web::Data<AppState>) -> HttpResponse {
     let mut context = Context::new();
-    let mut dogs = data.dog_map.values().collect::<Vec<&Dog>>();
+    let dog_map = data.dog_map.lock().unwrap();
+    let mut dogs = dog_map.values().collect::<Vec<&Dog>>();
     dogs.sort_by(|a, b| a.name.cmp(&b.name));
     context.insert("dogs", &dogs);
 
@@ -114,4 +123,18 @@ async fn rows(data: web::Data<AppState>) -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/html")
         .body(html.unwrap())
+}
+
+// async fn select(data: web::Data<AppState>, info: web::Path<(String,)>) -> HttpResponse {
+// The type for Path is a tuple that lists the types of the path parameters.
+async fn select(params: web::Path<String>, data: web::Data<Arc<AppState>>) -> HttpResponse {
+    let id = params.into_inner();
+    println!("id = {:?}", id);
+    println!("data = {:?}", data);
+    let mut selected_id = data.selected_id.lock().unwrap();
+    *selected_id = id;
+
+    HttpResponse::Ok()
+        .insert_header(("HX-Trigger", "selection-change"))
+        .body("")
 }
