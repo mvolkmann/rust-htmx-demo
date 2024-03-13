@@ -1,5 +1,6 @@
 use actix_files::Files;
 use actix_web::{web, App, HttpResponse, HttpServer};
+use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -15,9 +16,9 @@ struct Dog {
 
 #[derive(Debug)]
 struct AppState {
-  dog_map: Mutex<HashMap<String, Dog>>,
-  selected_id: Mutex<String>,
-  templates: tera::Tera
+    dog_map: Mutex<HashMap<String, Dog>>,
+    selected_id: Mutex<String>,
+    templates: tera::Tera,
 }
 
 fn add_dog(dog_map: &mut HashMap<String, Dog>, name: &str, breed: &str) -> Dog {
@@ -35,22 +36,24 @@ fn add_dog(dog_map: &mut HashMap<String, Dog>, name: &str, breed: &str) -> Dog {
 async fn main() -> Result<(), std::io::Error> {
     println!("in main");
     let server = HttpServer::new(|| {
-        println!("creating server");
-        let templates = Tera::new("src/templates/**/*.tera").unwrap();
-
-        let state = AppState {
+        let state = Arc::new(Mutex::new(AppState {
             dog_map: Mutex::new(HashMap::new()),
             selected_id: Mutex::new(String::new()),
-            templates,
-        };
+            templates: Tera::new("src/templates/**/*.tera").unwrap(),
+        }));
 
-        let mut dog_map = &state.dog_map.lock().unwrap();
-        add_dog(&mut dog_map, "Comet", "Whippet");
-        add_dog(&mut dog_map, "Oscar", "German Shorthaired Pointer");
-        println!("dog_map = {:?}", state.dog_map);
- 
+        {
+            // New scope to extend the lifetime of the lock
+            let state_lock = state.lock().unwrap();
+            let mut dog_map = state_lock.dog_map.lock().unwrap();
+            add_dog(&mut dog_map, "Comet", "Whippet");
+            add_dog(&mut dog_map, "Oscar", "German Shorthaired Pointer");
+            println!("dog_map = {:?}", *dog_map);
+            // state_lock is dropped here, releasing the lock
+        }
+
         App::new()
-            .app_data(web::Data::new(state))
+            .app_data(web::Data::new(state.clone()))
             .route("/hello", web::get().to(hello))
             .route("/dogs", web::get().to(dogs))
             .route("/form", web::get().to(form))
@@ -58,10 +61,14 @@ async fn main() -> Result<(), std::io::Error> {
             .route("/select/{id}", web::get().to(select))
             .service(Files::new("/", "./public").index_file("index.html"))
     })
-    .workers(1) 
+    .workers(1)
     .bind("127.0.0.1:3000")
     .unwrap()
-    .run();
+    .run()
+    .map_err(|e| {
+        eprintln!("Error starting server: {:?}", e);
+        e
+    });
 
     // println!("listening at {}", server.local_addr());
     println!("listening on 3000");
@@ -91,9 +98,9 @@ async fn form(data: web::Data<AppState>) -> HttpResponse {
     // let mut context = Context::new();
     let context = Context::new();
     if !id.is_empty() {
-      println!("form: id is not empty");
-      // let dog_ref = &data.dog_map[&id];
-      // context.insert("dog", dog_ref);
+        println!("form: id is not empty");
+        // let dog_ref = &data.dog_map[&id];
+        // context.insert("dog", dog_ref);
     }
 
     let html = data.templates.render("form.tera", &context);
